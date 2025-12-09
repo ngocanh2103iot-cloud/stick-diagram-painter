@@ -102,7 +102,7 @@ col1, col2 = st.columns([1, 4]) # Adjust ratio for logo vs title
 
 with col1:
     try:
-        st.image("C:/Users/justi/.gemini/antigravity/brain/84c85642-6ae9-48cb-bdfd-a357ef2b26ea/stick_diagram_logo_1765273112986.png", use_container_width=True)
+        st.image("logo.png", use_container_width=True)
     except:
         pass
 
