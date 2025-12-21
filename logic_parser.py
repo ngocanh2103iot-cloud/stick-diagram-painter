@@ -48,8 +48,8 @@ class LogicParser:
         Recursive graph builder.
         and_type/or_type can be 'series' or 'parallel'
         """
-        # Base case: single variable
-        if re.match(r'^[A-Za-z]+$', expr):
+        # Base case: single variable or negated variable
+        if re.match(r'^~?[A-Za-z]+$', expr):
             u, v = self._get_new_nodes(graph)
             graph.add_edge(u, v, label=expr)
             return u, v
