@@ -1,231 +1,230 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.lines as mlines
+import numpy as np
 
 class StickRenderer:
+    """Standard VLSI Stick Diagram Renderer"""
+
     def __init__(self):
-        self.fig, self.ax = plt.subplots(figsize=(10, 6))
-        self.ax.set_aspect('equal')
-        self.ax.axis('off')
-        
-        # Constants for drawing
-        self.poly_width = 0.5
-        self.diff_height = 1.0
-        self.metal_height = 0.5
-        self.contact_size = 0.3
-        self.pitch = 2.0 # Distance between gates
-        
-        # Y-coordinates
-        self.y_pun = 6.0
-        self.y_pdn = 2.0
-        self.y_vcc = 8.0
-        self.y_gnd = 0.0
-        self.y_out = 4.0
+        # Standard VLSI colors
+        self.COLOR_N_DIFF = '#228B22'      # Forest Green (N-diffusion)
+        self.COLOR_P_DIFF = '#DAA520'      # Goldenrod (P-diffusion)
+        self.COLOR_POLY = '#DC143C'        # Crimson (Polysilicon)
+        self.COLOR_METAL = '#4169E1'       # Royal Blue (Metal 1)
+        self.COLOR_CONTACT = 'black'
+
+        # Dimensions (in lambda units, standard VLSI)
+        self.LAMBDA = 0.5
+        self.POLY_WIDTH = 0.5
+        self.DIFF_HEIGHT = 2.0
+        self.GATE_PITCH = 4.0              # Distance between poly gates
+        self.METAL_WIDTH = 0.5
 
     def draw_layout(self, euler_path, pdn_graph, pun_graph):
-        """
-        Draws the stick diagram based on the Euler path.
-        euler_path: List of input labels (e.g., ['A', 'B', 'C'])
-        """
-        self.ax.clear()
-        self.ax.set_aspect('equal')
-        self.ax.axis('off')
-        
+        """Draw standard stick diagram"""
+        self.fig, (self.ax_pun, self.ax_pdn) = plt.subplots(2, 1, figsize=(12, 8))
+        self.fig.suptitle('CMOS Stick Diagram', fontsize=14, fontweight='bold')
+
         if not euler_path:
-            self.ax.text(0.5, 0.5, "No Euler Path Found - Cannot Draw Single Strip", 
-                         ha='center', va='center', transform=self.ax.transAxes)
+            self.ax_pdn.text(0.5, 0.5, "No Euler Path Found", ha='center', va='center',
+                           transform=self.ax_pdn.transAxes, fontsize=14)
             return self.fig
 
-        num_inputs = len(euler_path)
-        width = (num_inputs + 1) * self.pitch
-        
-        # 1. Draw Rails (Metal 1 - Blue)
-        # VCC
-        self._add_rect(0, self.y_vcc, width, self.metal_height, 'blue', 'VCC')
-        # GND
-        self._add_rect(0, self.y_gnd, width, self.metal_height, 'blue', 'GND')
-        
-        # 2. Draw Diffusion Strips
-        # PUN (P-Diff - Yellow/Orange)
-        self._add_rect(0, self.y_pun, width, self.diff_height, 'orange', 'P-Diff')
-        # PDN (N-Diff - Green)
-        self._add_rect(0, self.y_pdn, width, self.diff_height, 'green', 'N-Diff')
-        
-        # 3. Draw Polysilicon Gates (Red)
-        for i, label in enumerate(euler_path):
-            x = (i + 1) * self.pitch
-            # Draw vertical poly strip crossing both diffusions
-            self._add_rect(x, self.y_pdn - 1, self.poly_width, self.y_pun + 2, 'red', label)
-            # Add label
-            self.ax.text(x + self.poly_width/2, self.y_pun + 2.5, label, 
-                         ha='center', va='bottom', color='red', fontsize=12, fontweight='bold')
+        self.euler_path = euler_path
+        self.num_inputs = len(euler_path)
+        self.width = (self.num_inputs + 2) * self.GATE_PITCH
 
-        # 4. Draw Connections (Simplified for MVP)
-        # We need to connect sources/drains based on the graph topology.
-        # This is the tricky part: mapping graph nodes to physical regions between gates.
-        
-        # The Euler path defines the sequence of gates.
-        # The regions between gates (and ends) correspond to nodes in the graph.
-        # Sequence: Node0 - Gate1 - Node1 - Gate2 - Node2 ...
-        
-        # We need to figure out which node in the graph corresponds to which region.
-        # We can trace the path in the graph.
-        
-        # Trace PDN
-        pdn_nodes = self._trace_nodes(pdn_graph, euler_path)
-        # Trace PUN
-        pun_nodes = self._trace_nodes(pun_graph, euler_path)
-        
-        # Draw contacts and metal connections for these nodes
-        self._draw_connections(pdn_nodes, self.y_pdn, 'GND', self.y_gnd)
-        self._draw_connections(pun_nodes, self.y_pun, 'VCC', self.y_vcc)
-        
-        # Draw Output connections
-        # Find the output node (usually connected to PUN and PDN common point?)
-        # In our graph, we didn't explicitly mark VCC/GND/Out nodes.
-        # Assumption: 
-        # In PDN, one node is GND, one is Out.
-        # In PUN, one node is VCC, one is Out.
-        # We need to identify them.
-        # Heuristic: 
-        # - VCC/GND are usually the nodes with high degree or specific connectivity?
-        # - Actually, for a single complex gate:
-        #   - PDN connects Out to GND.
-        #   - PUN connects Out to VCC.
-        #   - So the "common" node between all parallel branches in PDN is usually GND/Out.
-        
-        # Let's assume the parser can identify Source/Drain nodes?
-        # Or simpler: The user gives Y = ...
-        # The "Output" is the node that connects PUN and PDN.
-        # In our trace, we have a list of nodes [n0, n1, n2...] corresponding to regions.
-        # We need to find which n_i is connected to VCC/GND/Out.
-        
-        # Hack for MVP:
-        # Just draw contacts.
-        # If a region corresponds to a node that should be VCC, draw via to VCC rail.
-        # If GND, draw via to GND rail.
-        # If Out, draw via to Output rail (middle).
-        
-        # Since we don't have full circuit extraction, we'll use a visual heuristic:
-        # - Leftmost/Rightmost are often power/ground/out.
-        # - Alternating source/drain.
-        
-        # Let's draw the Output Rail in the middle
-        self._add_rect(0, self.y_out, width, self.metal_height/2, 'blue', 'Output')
-        
+        # Draw PUN (top) and PDN (bottom)
+        self._draw_pun()
+        self._draw_pdn()
+
+        # Add legend
+        self._add_legend()
+
+        plt.tight_layout()
         return self.fig
 
-    def _trace_nodes(self, graph, path):
-        # Reconstruct the sequence of nodes visited by the Euler path
-        # Returns a list of nodes corresponding to regions [Left, Between 1-2, Between 2-3, ..., Right]
-        
-        # Find start node that allows this path
-        # We did this in parser._is_valid_path
-        
-        edge_map = {}
-        for u, v, data in graph.edges(data=True):
-            label = data['label']
-            edge_map[label] = (u, v)
-            
-        # Find valid start node
-        start_node = None
-        for node in graph.nodes():
-            curr = node
-            valid = True
-            temp_map = edge_map.copy()
-            for label in path:
-                if label not in temp_map:
-                    valid = False
-                    break
-                u, v = temp_map[label]
-                if curr == u:
-                    curr = v
-                elif curr == v:
-                    curr = u
-                else:
-                    valid = False
-                    break
-            if valid:
-                start_node = node
-                break
-        
-        if start_node is None:
-            return []
-            
-        # Now trace and record nodes
-        nodes = [start_node]
-        curr = start_node
-        # We need to be careful about parallel edges or reused labels?
-        # Assuming unique labels for now.
-        for label in path:
-            u, v = edge_map[label]
-            if curr == u:
-                curr = v
-            else:
-                curr = u
-            nodes.append(curr)
-            
-        return nodes
+    def _draw_pun(self):
+        """Draw Pull-Up Network (PMOS) - top section"""
+        ax = self.ax_pun
+        ax.set_xlim(-1, self.width + 1)
+        ax.set_ylim(-1, 8)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        ax.set_title('Pull-Up Network (PMOS)', fontsize=11, color=self.COLOR_P_DIFF)
 
-    def _draw_connections(self, nodes, y_diff, rail_name, y_rail):
-        # This is where we guess which node is Power/Ground/Output
-        # In a real tool, we'd know.
-        # Here, let's assume:
-        # - If it's PDN: One set of nodes is GND, one is Output.
-        # - If it's PUN: One set of nodes is VCC, one is Output.
-        
-        # We need to know which graph node is which.
-        # Let's assume node 0 is Output? And node 1 is Power/Ground?
-        # This depends on how _build_graph constructed it.
-        # In _build_graph:
-        # Series: S -> ... -> E. 
-        # Parallel: S -> ... -> E.
-        # Usually S is one terminal, E is the other.
-        # Let's assume Start Node (lowest ID?) is Output, End Node is VCC/GND?
-        # Or vice versa.
-        
-        # Let's just visualize the nodes with text for now to debug.
-        # And draw contacts.
-        
-        for i, node in enumerate(nodes):
-            x = i * self.pitch + self.pitch/2
-            # Draw Contact
-            self._add_contact(x, y_diff)
-            
-            # Label the diffusion region with node ID
-            self.ax.text(x, y_diff, f"n{node}", ha='center', va='center', fontsize=8, color='black')
-            
-            # Heuristic connection:
-            # If node ID is 0, connect to Output (Middle)
-            # If node ID is 1, connect to Rail (VCC/GND)
-            # This relies on the parser's node numbering: 0 and 1 are initial nodes.
-            
-            if node == 0: # Output
-                self._add_wire(x, y_diff, self.y_out)
-                self._add_contact(x, self.y_out)
-            elif node == 1: # Power/Ground
-                self._add_wire(x, y_diff, y_rail)
-                self._add_contact(x, y_rail)
+        y_pdiff = 4.0
+        y_vcc = 7.0
 
-    def _add_rect(self, x, y, w, h, color, label=None):
-        rect = patches.Rectangle((x, y), w, h, linewidth=1, edgecolor='none', facecolor=color, alpha=0.7)
-        self.ax.add_patch(rect)
-        if label and x == 0: # Label only once at start
-            self.ax.text(x - 0.5, y + h/2, label, ha='right', va='center', color=color, fontsize=10)
+        # VCC rail (Metal)
+        self._draw_metal_line(ax, -1, y_vcc, self.width + 2, label='VCC')
 
-    def _add_contact(self, x, y):
-        # Draw X
-        size = self.contact_size
-        self.ax.plot([x-size, x+size], [y-size, y+size], 'k-', linewidth=1)
-        self.ax.plot([x-size, x+size], [y+size, y-size], 'k-', linewidth=1)
-        # Draw box
-        rect = patches.Rectangle((x-size, y-size), 2*size, 2*size, linewidth=1, edgecolor='black', facecolor='none')
-        self.ax.add_patch(rect)
+        # P-Diffusion strip
+        self._draw_diffusion(ax, 0, y_pdiff, self.width, self.COLOR_P_DIFF, 'P-Diff')
 
-    def _add_wire(self, x, y1, y2):
-        self.ax.plot([x, x], [y1, y2], 'b-', linewidth=2, alpha=0.6)
+        # Draw PMOS transistors based on Euler path
+        self._draw_transistors(ax, euler_path, y_pdiff, is_pmos=True)
+
+        # Connect to VCC
+        self._connect_to_rail(ax, y_pdiff, y_vcc, 'VCC', is_pmos=True)
+
+        # Label transistors (A, B, C...) on polysilicon
+        self._label_gates(ax, euler_path, y_pdiff)
+
+    def _draw_pdn(self):
+        """Draw Pull-Down Network (NMOS) - bottom section"""
+        ax = self.ax_pdn
+        ax.set_xlim(-1, self.width + 1)
+        ax.set_ylim(-1, 5)
+        ax.set_aspect('equal')
+        ax.axis('off')
+        ax.set_title('Pull-Down Network (NMOS)', fontsize=11, color=self.COLOR_N_DIFF)
+
+        y_ndiff = 1.0
+        y_gnd = 0.0
+
+        # GND rail (Metal)
+        self._draw_metal_line(ax, -1, y_gnd, self.width + 2, label='GND')
+
+        # N-Diffusion strip
+        self._draw_diffusion(ax, 0, y_ndiff, self.width, self.COLOR_N_DIFF, 'N-Diff')
+
+        # Draw NMOS transistors based on Euler path
+        self._draw_transistors(ax, euler_path, y_ndiff, is_pmos=False)
+
+        # Connect to GND
+        self._connect_to_rail(ax, y_ndiff, y_gnd, 'GND', is_pmos=False)
+
+        # Label output (Y)
+        ax.text(self.width + 0.5, 2.5, 'Y', fontsize=14, fontweight='bold',
+               color='black', va='center')
+
+        # Draw output wire
+        ax.plot([self.width, self.width], [2.0, 2.5], color=self.COLOR_METAL, linewidth=2)
+
+        # Label transistors
+        self._label_gates(ax, euler_path, y_ndiff)
+
+    def _draw_diffusion(self, ax, x, y, width, color, label):
+        """Draw diffusion strip"""
+        rect = patches.Rectangle((x, y), width, self.DIFF_HEIGHT,
+                                 linewidth=1.5, edgecolor='black',
+                                 facecolor=color, alpha=0.6)
+        ax.add_patch(rect)
+        ax.text(x - 0.3, y + self.DIFF_HEIGHT/2, label, fontsize=9,
+               va='center', ha='right', color=color, fontweight='bold')
+
+    def _draw_metal_line(self, ax, x, y, width, label=None):
+        """Draw metal wire (VCC, GND, Output)"""
+        rect = patches.Rectangle((x, y), width, self.METAL_WIDTH,
+                                 linewidth=1.5, edgecolor='black',
+                                 facecolor=self.COLOR_METAL, alpha=0.8)
+        ax.add_patch(rect)
+        if label:
+            ax.text(x - 0.3, y + self.METAL_WIDTH/2, label, fontsize=9,
+                   va='center', ha='right', color=self.COLOR_METAL, fontweight='bold')
+
+    def _draw_transistors(self, ax, euler_path, y_diff, is_pmos=True):
+        """Draw transistor gates as polysilicon crossing diffusion"""
+        color = self.COLOR_POLY
+        transistor_color = self.COLOR_P_DIFF if is_pmos else self.COLOR_N_DIFF
+
+        for i, label in enumerate(euler_path):
+            x = (i + 1.5) * self.GATE_PITCH
+
+            # Draw vertical polysilicon line (the gate)
+            ax.plot([x, x], [y_diff - 0.5, y_diff + self.DIFF_HEIGHT + 0.5],
+                   color=color, linewidth=self.POLY_WIDTH * 2, solid_capstyle='round')
+
+            # Draw transistor symbol (gate crossover)
+            # Standard transistor symbol: diffusion meets poly at right angles
+            gate_height = self.DIFF_HEIGHT
+
+            # Add small rectangle to show gate area
+            gate = patches.Rectangle((x - self.POLY_WIDTH, y_diff),
+                                     self.POLY_WIDTH * 2, gate_height,
+                                     linewidth=1, edgecolor=color,
+                                     facecolor=color, alpha=0.8)
+            ax.add_patch(gate)
+
+    def _label_gates(self, ax, euler_path, y_diff):
+        """Label input variables above gates"""
+        for i, label in enumerate(euler_path):
+            x = (i + 1.5) * self.GATE_PITCH
+            ax.text(x, y_diff + self.DIFF_HEIGHT + 0.8, label,
+                   fontsize=12, fontweight='bold', color=self.COLOR_POLY,
+                   ha='center', va='bottom')
+
+    def _connect_to_rail(self, ax, y_diff, y_rail, rail_name, is_pmos=True):
+        """Connect diffusion to VCC/GND rail with contacts"""
+        # Find where poly gates are
+        positions = [(i + 1.5) * self.GATE_PITCH for i in range(len(self.euler_path))]
+
+        # Connect left end to rail
+        x_left = positions[0] - self.GATE_PITCH / 2
+        self._draw_contact(ax, x_left, y_diff)
+        self._draw_via(ax, x_left, y_diff, y_rail)
+
+        # Connect right end to rail (or output)
+        x_right = positions[-1] + self.GATE_PITCH / 2
+
+        if is_pmos:
+            # PUN right side connects to output (middle)
+            y_out = 4.5
+            ax.text(self.width + 0.5, y_out, 'Y', fontsize=14, fontweight='bold', va='center')
+            ax.plot([self.width, self.width], [y_diff + self.DIFF_HEIGHT/2, y_out],
+                   color=self.COLOR_METAL, linewidth=2)
+            self._draw_via(ax, self.width, y_diff + self.DIFF_HEIGHT/2, y_out)
+        else:
+            # PDN right side connects to output
+            y_out = 2.5
+            self._draw_via(ax, self.width, y_diff + self.DIFF_HEIGHT/2, y_out)
+
+        # Draw contacts between transistors (showing series connection)
+        for x in positions[1:-1]:
+            self._draw_contact(ax, x, y_diff)
+
+    def _draw_contact(self, ax, x, y):
+        """Draw contact (diffusion to metal) - square with X"""
+        size = 0.25
+        # Square
+        rect = patches.Rectangle((x - size, y - size), size * 2, size * 2,
+                                 linewidth=1, edgecolor='black', facecolor='white')
+        ax.add_patch(rect)
+        # X mark
+        ax.plot([x - size, x + size], [y - size, y + size], 'k-', linewidth=1)
+        ax.plot([x - size, x + size], [y + size, y - size], 'k-', linewidth=1)
+
+    def _draw_via(self, ax, x, y1, y2):
+        """Draw via (metal to metal connection)"""
+        if abs(y2 - y1) < 0.1:
+            return
+        # Draw vertical metal connection
+        ax.plot([x, x], [y1, y2], color=self.COLOR_METAL, linewidth=2)
+        # Via symbol (small square)
+        size = 0.15
+        mid_y = (y1 + y2) / 2
+        rect = patches.Rectangle((x - size, mid_y - size), size * 2, size * 2,
+                                 linewidth=1, edgecolor='black', facecolor=self.COLOR_METAL)
+        ax.add_patch(rect)
+
+    def _add_legend(self):
+        """Add color legend"""
+        legend_elements = [
+            patches.Patch(facecolor=self.COLOR_POLY, alpha=0.8, label='Polysilicon (Gate)'),
+            patches.Patch(facecolor=self.COLOR_N_DIFF, alpha=0.6, label='N-Diffusion (NMOS)'),
+            patches.Patch(facecolor=self.COLOR_P_DIFF, alpha=0.6, label='P-Diffusion (PMOS)'),
+            patches.Patch(facecolor=self.COLOR_METAL, alpha=0.8, label='Metal-1'),
+            mlines.Line2D([0], [0], color='black', marker='x', linestyle='None',
+                         markersize=8, label='Contact/Via')
+        ]
+        self.fig.legend(handles=legend_elements, loc='lower center', ncol=5,
+                       fontsize=9, frameon=True)
 
 if __name__ == "__main__":
     renderer = StickRenderer()
-    # Dummy data for testing
-    # renderer.draw_layout(['A', 'B', 'C'], None, None)
-    # plt.show()
+    # Test with simple NAND path
+    renderer.draw_layout(['A', 'B'], None, None)
+    plt.savefig('test_stick_diagram.png', dpi=150, bbox_inches='tight')
+    print("Saved test_stick_diagram.png")

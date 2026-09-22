@@ -1,8 +1,6 @@
 import streamlit as st
 import networkx as nx
 import matplotlib.pyplot as plt
-import sys
-sys.path.append('c:/Users/justi/.gemini/antigravity/scratch/Cmos_designer')
 from logic_parser import LogicParser
 from stick_renderer import StickRenderer
 
