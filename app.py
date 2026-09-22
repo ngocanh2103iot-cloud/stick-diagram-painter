@@ -1,6 +1,6 @@
 import streamlit as st
 
 # This file redirects to the home page
-from 1_🏠_HOME import *
+from 1_HOME import *
 
 # Run the home page
